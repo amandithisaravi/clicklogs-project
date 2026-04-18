@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Click Logger</title>
+  <style>
+    body{
+      font-family: Arial, sans-serif;
+      background: #f2f2f2;
+      text-align: center;
+      padding-top: 60px;
+    }
+    #buttoncontainer{
+      margin-bottom: 30px;
+    }
+    button{
+      padding: 12px 24px;
+      font-size: 18px;
+      margin: 8px;
+      cursor: pointer;
+    }
+    #container{
+      display: none;
+      width: 500px;
+      max-width: 90%;
+      margin: auto;
+      background: white;
+      border: 1px solid #ccc;
+      padding: 20px;
+      border-radius: 8px;
+    }
+    #tapHere{
+      width: 100%;
+      height: 220px;
+      background: steelblue;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 24px;
+    }
+    #counter{
+      margin-bottom: 15px;
+      font-size: 22px;
+    }
+    #continue{
+      display: none;
+      margin-top: 15px;
+    }
+  </style>
+</head>
+<body onload="onLoad()">
+
+  <div id="buttoncontainer">
+    <button onclick="saveDependentVariable('android')">Android</button>
+    <button onclick="saveDependentVariable('pc')">PC</button>
+  </div>
+
+  <div id="container">
+    <div id="counter"></div>
+    <button id="tapHere">Tap Here</button>
+    <button id="continue" onclick="startNext()">Continue</button>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+
+  <script>
+    const firebaseConfig = {
+      	apiKey: "AIzaSyCzaZboTEhU0RfqEkNNwD2wI7N4gkMTmnA",
+  		authDomain: "clicklogs---project.firebaseapp.com",
+  		projectId: "clicklogs---project",
+  		storageBucket: "clicklogs---project.firebasestorage.app",
+  		messagingSenderId: "590087980246",
+  		appId: "1:590087980246:web:5afc1af224bc568ac77577",
+  		measurementId: "G-Q3ML8647G6"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    let totalTouchDuration = 0;
+    let tapCounter = 0;
+    let startTap = 0, endTap = 0;
+    let tapLogsArray = [];
+    let uniqueIdentifier = 0;
+    let dependentVariable = "";
+    let showFeedback = false;
+    let interfaceVariations = 2;
+    let interfaceSequence = 1;
+
+    function onLoad() {
+      const tapButton = document.getElementById("tapHere");
+      const d = new Date();
+
+      if (d.getTime() % 2 === 0) {
+        showFeedback = true;
+      }
+
+      uniqueIdentifier = d.getTime() + "" + Math.floor(Math.random() * 42);
+
+      ["mousedown", "mouseup", "touchstart", "touchend"].forEach(function(ev) {
+        tapButton.addEventListener(ev, tapityTap);
+      });
+    }
+
+    function saveDependentVariable(value) {
+      dependentVariable = value;
+      document.getElementById("buttoncontainer").style.display = "none";
+      document.getElementById("container").style.display = "block";
+    }
+
+    function tapityTap(event) {
+      const d = new Date();
+      const type = event.type;
+
+      switch(type) {
+        case "touchstart":
+          event.preventDefault();
+        case "mousedown":
+          startTap = d.getTime();
+          break;
+
+        case "touchend":
+          event.preventDefault();
+        case "mouseup":
+          endTap = d.getTime();
+
+          if (startTap > 0 && endTap >= startTap) {
+            const duration = endTap - startTap;
+            tapCounter++;
+            totalTouchDuration += duration;
+            const meanTouchDuration = totalTouchDuration / tapCounter;
+
+            const tap = {
+              tapSequenceNumber: tapCounter,
+              startTimestamp: startTap,
+              endTimestamp: endTap,
+              interfaceSequence: interfaceSequence,
+              interface: showFeedback ? "feedbackshown" : "nofeedback"
+            };
+
+            tapLogsArray.push(tap);
+
+            if (showFeedback) {
+              document.getElementById("counter").innerHTML =
+                'Mean tap duration: <span style="color:orange;">' + Math.round(meanTouchDuration) + '</span> ms';
+            }
+
+            if (tapCounter >= 50) {
+              interfaceSequence++;
+
+              if (interfaceSequence <= interfaceVariations) {
+                document.getElementById("continue").style.display = "inline-block";
+                document.getElementById("tapHere").style.display = "none";
+              } else {
+                document.getElementById("tapHere").style.display = "none";
+                syncToServer();
+              }
+            }
+          }
+
+          startTap = 0;
+          endTap = 0;
+          break;
+      }
+    }
+
+    function startNext() {
+      startTap = 0;
+      endTap = 0;
+      tapCounter = 0;
+      totalTouchDuration = 0;
+      document.getElementById("tapHere").style.display = "inline-block";
+      document.getElementById("continue").style.display = "none";
+      document.getElementById("counter").innerHTML = "";
+      showFeedback = !showFeedback;
+    }
+
+    function syncToServer() {
+      Promise.all(
+        tapLogsArray.map(tap =>
+          db.collection("tap_logs").add({
+            session_id: uniqueIdentifier,
+            device_platform: dependentVariable,
+            tap_sequence_number: tap.tapSequenceNumber,
+            start_timestamp: tap.startTimestamp,
+            end_timestamp: tap.endTimestamp,
+            interface_type: tap.interface,
+            interface_sequence: tap.interfaceSequence,
+            duration: tap.endTimestamp - tap.startTimestamp,
+            created_at: new Date()
+          })
+        )
+      )
+      .then(() => {
+        alert("Data saved to Firebase successfully!");
+      })
+      .catch((error) => {
+        console.error(error);
+        alert("Error saving data");
+      });
+    }
+  </script>
+</body>
+</html>
